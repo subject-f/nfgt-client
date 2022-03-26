@@ -10,18 +10,25 @@ import (
 )
 
 type Config struct {
-	SshKey        string `yaml:"config.git.ssh_key"`
-	SshPassphrase string `yaml:"config.git.passphrase"`
-	RemoteUrl     string `yaml:"config.git.remote_url"`
-	RemoteName    string `yaml:"config.git.remote_name"`
+	SshKey          string `yaml:"config.git.ssh_key"`
+	SshPassphrase   string `yaml:"config.git.passphrase"`
+	RemoteUrl       string `yaml:"config.git.remote_url"`
+	RemoteName      string `yaml:"config.git.remote_name"`
+	EpochBranchName string `yaml:"config.git.epoch_branch"`
 
-	SyncInterval int `yaml:"config.sync_interval"`
+	ApiBindAddress string `yaml:"config.api.bind_address"`
+	ApiPort        string `yaml:"config.api.port"`
+
+	SyncInterval int64 `yaml:"config.sync_interval"`
 }
 
 var defaultValues = map[string]interface{}{
-	"config.git.passphrase":  "",
-	"config.git.remote_name": "origin",
-	"config.sync_interval":   10,
+	"config.git.passphrase":   "",
+	"config.git.remote_name":  "origin",
+	"config.git.epoch_branch": "main",
+	"config.sync_interval":    4000,
+	"config.api.port":         "8080",
+	"config.api.bind_address": "0.0.0.0",
 }
 
 func ParseConfig(filepath string) Config {

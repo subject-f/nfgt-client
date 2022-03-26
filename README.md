@@ -97,12 +97,16 @@ Each node will synchronize its local state (git pull) every 10 seconds.
 
 The API has the following routes:
 
-- `POST /api/transact/create` - endpoints that clients should call to create a new record for a unique `record_id`. Fails if the `record_id` already exists.
-- `POST /api/transact/update` - endpoint that clients should call to update the ownership of a given record. Fails if the wrong `successor_passphrase` is provided.
-- `POST /api/query` - a query API that supports batch transactions to determine the current owners for a list of `record_id` strings, or by finding what a given `owner_id` owns. Interface TBD.
+`POST /api/transaction/create` - create a transaction. Takes a `json` with an `owner_id`, `asset_id`, `passphrase`, and `metadata`
+`GET  /api/transaction/status/:transactionId` - checks the status of a transaction. This should be performed after the creation to poll the status
 
-It's important to note that the record IDs are string literals, so any query parameter to a URL will allow it to succeed. Normalization should probably be done, but where?
+`GET /api/query/spot/owner/:ownerId` - the owner's current assets
+`GET /api/query/spot/asset/:assetId` - the asset's current metadata (ie. its latest transaction)
 
+`GET /api/query/history/owner/:ownerId/:depth` - the owner's transaction history up to `:depth`
+`GET /api/query/history/asset/:assetId/:depth` - the asset's transaction history up to `:depth`
+
+Response codes are standardized -- 400 means you did something wrong, 500 means the server had an issue and that you should try again.
 
 # Integrations
 

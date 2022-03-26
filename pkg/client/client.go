@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -35,22 +36,39 @@ type Client struct {
 	AssetIdMap              map[string]string              // Mapping of asset ID to owner ID
 	OwnerSet                map[string]map[string]struct{} // A set of the asset IDs an owner currently has
 	OwnerTransactionHistory map[string]map[string]struct{} // A map to a set of all transactions related to a given owner
-	config                  common.Config
+	syncReq                 chan struct{}
+	config                  *common.Config
 	GitProvider             *git.GitProvider
 	sync.RWMutex
 }
 
-func NewClient(config common.Config, gitProvider *git.GitProvider) *Client {
+func NewClient(config *common.Config, gitProvider *git.GitProvider) *Client {
 	client := Client{
 		RefLockSet:              make(map[string]struct{}),
 		TransactionSet:          make(map[string]struct{}),
 		AssetIdMap:              make(map[string]string),
 		OwnerSet:                make(map[string]map[string]struct{}),
 		OwnerTransactionHistory: make(map[string]map[string]struct{}),
+		syncReq:                 make(chan struct{}, 1),
 		config:                  config,
 		GitProvider:             gitProvider,
 	}
-	client.Sync()
+
+	go func() {
+		common.Infof("Started sync request channel\n")
+		for {
+			<-client.syncReq
+			client.Sync()
+		}
+	}()
+	go func() {
+		common.Infof("Started sync timer at interval %v ms\n", config.SyncInterval)
+		for {
+			client.syncReq <- struct{}{}
+			time.Sleep(time.Duration(config.SyncInterval) * time.Millisecond)
+		}
+	}()
+
 	return &client
 }
 
@@ -67,12 +85,25 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 		return nil, ErrTransactionIdExists
 	}
 
+	var assetSignal sync.WaitGroup
+
 	if _, exists := c.RefLockSet[transaction.AssetId]; exists {
 		c.RUnlock()
 		common.Debugf("A transaction with the current asset ID already exists\n")
 		return nil, ErrConcurrentAssetId
 	} else {
 		c.RefLockSet[transaction.AssetId] = struct{}{}
+
+		// This isn't pretty, but we want to defer this to guarantee we unlock the refset,
+		// however we also don't want to block the response since we want to wait on the push
+		defer func() {
+			go func() {
+				assetSignal.Wait()
+				c.Lock()
+				delete(c.RefLockSet, transaction.AssetId)
+				c.Unlock()
+			}()
+		}()
 	}
 	c.RUnlock()
 
@@ -84,7 +115,7 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 
 	if worktree.CheckoutBranch(plumbing.NewRemoteReferenceName(c.config.RemoteName, transactionBranch)) != nil {
 		common.Debugf("Starting a new transaction chain for %v\n", transactionBranch)
-		worktree.CheckoutBranch(plumbing.NewRemoteReferenceName(c.config.RemoteName, git.BaseBranchName))
+		worktree.CheckoutBranch(plumbing.NewRemoteReferenceName(c.config.RemoteName, c.config.EpochBranchName))
 		shouldCheckPassphrase = false
 	}
 
@@ -131,11 +162,20 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 		if c.GitProvider.Push(hash, transactionBranch, transaction.TransactionId) != nil {
 			common.Warnf("Failed to push transaction %v\n", transaction.TransactionId)
 		}
-		c.Lock()
-		delete(c.RefLockSet, transaction.AssetId)
-		c.Unlock()
 		common.Debugf("Transaction (%v) took %v\n", transaction.TransactionId, time.Since(start))
+		assetSignal.Done()
+
+		select {
+		case c.syncReq <- struct{}{}:
+			common.Debugf("Queued a sync operation after push.\n")
+		default:
+			return
+		}
 	}()
+
+	// We'll need to increment the signal since we've successfully transacted, so we want
+	// the signal to block until we push and commit the transaction
+	assetSignal.Add(1)
 
 	return &pendingTransaction, nil
 }
@@ -173,7 +213,7 @@ func (c *Client) GetAssetTransactionHistory(assetId string, depth int) []Verifie
 		return nil
 	}
 
-	transactionHistory := make([]VerifiedTransaction, 5)
+	transactionHistory := make([]VerifiedTransaction, 0)
 
 	for i := 0; i < depth; i++ {
 		err = worktree.CheckoutParent(i)
@@ -205,7 +245,7 @@ func (c *Client) GetOwnerAssets(ownerId string) []VerifiedTransaction {
 		return []VerifiedTransaction{}
 	}
 
-	assets := make([]VerifiedTransaction, 5)
+	assets := make([]VerifiedTransaction, 0)
 
 	for assetId := range currentOwnerSet {
 		transactionBranch := GetAssetIdBranch(NFGT, assetId)
@@ -214,13 +254,12 @@ func (c *Client) GetOwnerAssets(ownerId string) []VerifiedTransaction {
 		err := worktree.CheckoutBranch(refName)
 
 		if common.CheckError(err) {
-			common.Warnf("Failed to checkout ref (%v) during sync\n", refName)
 			continue
 		}
 
 		t, err := getVerifiedTransaction(worktree)
 
-		if err != nil {
+		if common.CheckError(err) {
 			continue
 		}
 
@@ -233,9 +272,38 @@ func (c *Client) GetOwnerTransactionHistory(ownerId string, depth int) []Verifie
 	c.RLock()
 	defer c.RUnlock()
 
-	// TODO
+	worktree := c.GitProvider.CreateNewWorktree()
 
-	return nil
+	currentOwnerTransactionsSet, exists := c.OwnerTransactionHistory[ownerId]
+
+	if !exists {
+		return []VerifiedTransaction{}
+	}
+
+	// We have to get all the transactions, sort it, then trim by depth
+	transactions := make([]VerifiedTransaction, 0)
+
+	for transactionId := range currentOwnerTransactionsSet {
+		refName := plumbing.NewTagReferenceName(transactionId)
+
+		err := worktree.CheckoutBranch(refName)
+
+		if common.CheckError(err) {
+			continue
+		}
+
+		t, err := getVerifiedTransaction(worktree)
+
+		if common.CheckError(err) {
+			continue
+		}
+
+		transactions = append(transactions, *t)
+	}
+
+	sort.Sort(byTransactionTime(transactions))
+
+	return transactions[:common.Min(depth, len(transactions))]
 }
 
 func (c *Client) Sync() error {
@@ -252,6 +320,9 @@ func (c *Client) Sync() error {
 	success := 0
 	failure := 0
 
+	branch := 0
+	tag := 0
+
 	r.ForEach(func(r *plumbing.Reference) error {
 		err := worktree.CheckoutBranch(r.Name())
 
@@ -261,6 +332,7 @@ func (c *Client) Sync() error {
 		switch {
 		// Branch HEADs track the current owners of the given asset, so we update our cache accordingly
 		case strings.HasPrefix(r.Name().String(), plumbing.NewRemoteReferenceName(c.config.RemoteName, refNfgtPrefix).String()):
+			branch += 1
 			t, err := getVerifiedTransaction(worktree)
 			if common.CheckError(err) {
 				failure += 1
@@ -269,6 +341,7 @@ func (c *Client) Sync() error {
 			}
 		// Tags are general transactions that we should process
 		case strings.HasPrefix(r.Name().String(), plumbing.NewTagReferenceName(refTagPrefix).String()):
+			tag += 1
 			t, err := getVerifiedTransaction(worktree)
 			if common.CheckError(err) {
 				failure += 1
@@ -281,7 +354,7 @@ func (c *Client) Sync() error {
 		return nil
 	})
 
-	common.Infof("Sync status (success: %v, failure: %v)\n", success, failure)
+	common.Infof("Sync status (success: %v, failure: %v), parsed %v branches and %v tags\n", success, failure, branch, tag)
 	return nil
 }
 

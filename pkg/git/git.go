@@ -25,19 +25,18 @@ var (
 
 const (
 	MetadataFilename string = "metadata.json"
-	BaseBranchName   string = "master"
 	hashCutoffCount  int    = 6
 )
 
 type GitProvider struct {
-	config          common.Config
+	config          *common.Config
 	storageProvider *StorageProvider
 	auth            *ssh.PublicKeys
 	Repo            *gogit.Repository
 }
 
 // Create a new GitProvider for a given config. In an ideal world, this would be a singleton
-func NewGitProvider(config common.Config) *GitProvider {
+func NewGitProvider(config *common.Config) *GitProvider {
 	common.Debugf("Initializing repository (%v) as backing chain.\n", config.RemoteUrl)
 
 	auth, err := ssh.NewPublicKeys("git", []byte(config.SshKey), config.SshPassphrase)
@@ -107,7 +106,7 @@ func (g *GitProvider) CreateNewWorktree() *GitWorktree {
 
 	return &GitWorktree{
 		provider: g,
-		config:   &g.config,
+		config:   g.config,
 		Repo:     repo,
 		Worktree: worktree,
 	}
@@ -189,98 +188,3 @@ func (g *GitWorktree) WriteAndCommitMetadata(metadata string) (plumbing.Hash, er
 		Parents: []plumbing.Hash{}, // This is a no-op since the validator adds parents
 	})
 }
-
-// // Gets the string of the latest commit metadata, if it exists
-// func (g *GitWorktree) GetLatestCommitMetadata(branch string) (string, error) {
-// 	worktree, err := g.Repo.Worktree()
-
-// 	if err != nil {
-// 		return "", ErrWorktreeCreation
-// 	}
-
-// 	if worktree.Checkout(&gogit.CheckoutOptions{
-// 		Branch: plumbing.NewRemoteReferenceName(g.provider.config.RemoteName, branch),
-// 		Create: false,
-// 		Force:  true,
-// 	}) != nil {
-// 		return "", ErrBranchDoesNotExist
-// 	}
-
-// 	file, err := worktree.Filesystem.Open(MetadataFilename)
-
-// 	if err != nil {
-// 		return "", ErrMetadataFileOpen
-// 	}
-
-// 	fileContents, err := ioutil.ReadAll(file)
-
-// 	if err != nil {
-// 		return "", ErrMetadataFileRead
-// 	}
-
-// 	return string(fileContents), nil
-// }
-
-// // Creates a new commit on a given worktree and pushes it. If the reference does not exist,
-// // this function will checkout to the base branch and use its HEAD commit as the parent
-// func (g *GitWorktree) CreateNewCommit(branch, tag, metadata string) error {
-// 	log.Debugf("Creating a new commit on branch %v\n", branch)
-// 	start := time.Now()
-// 	defer func() {
-// 		log.Debugf("Creating a new commit for branch %v took %v\n", branch, time.Since(start))
-// 	}()
-
-// 	worktree, err := g.Repo.Worktree()
-
-// 	if err != nil {
-// 		return ErrWorktreeCreation
-// 	}
-
-// 	if err := worktree.Checkout(&gogit.CheckoutOptions{
-// 		Branch: plumbing.NewRemoteReferenceName(g.provider.config.RemoteName, branch),
-// 		Create: false,
-// 		Force:  true,
-// 	}); err != nil {
-// 		// Failed to check out, so we'll start from a known good location
-// 		worktree.Checkout(&gogit.CheckoutOptions{
-// 			Branch: plumbing.NewRemoteReferenceName(g.provider.config.RemoteName, BaseBranchName),
-// 			Create: false,
-// 			Force:  true,
-// 		})
-// 	}
-
-// 	file, err := worktree.Filesystem.Create(MetadataFilename)
-// 	if err != nil {
-// 		return ErrMetadataFileWrite
-// 	}
-// 	_, _ = file.Write([]byte(metadata))
-// 	_, _ = worktree.Add(MetadataFilename)
-
-// 	commit, err := worktree.Commit(common.ComputeHash(metadata), &gogit.CommitOptions{
-// 		Author: &object.Signature{
-// 			Name:  common.ComputeHash(g.provider.config.SshKey)[:hashCutoffCount],
-// 			Email: common.ComputeHash(g.provider.config.SshKey)[:hashCutoffCount],
-// 			When:  time.Now(),
-// 		},
-// 		Parents: []plumbing.Hash{},
-// 	})
-
-// 	log.Debugf("File write and commit for branch %v took %v\n", branch, time.Since(start))
-
-// 	if err != nil {
-// 		return ErrMetadataFileWrite
-// 	}
-
-// 	writer := log.Writer()
-// 	defer writer.Close()
-
-// 	return g.Repo.Push(&gogit.PushOptions{
-// 		RemoteName: g.provider.config.RemoteName,
-// 		RefSpecs: []config.RefSpec{
-// 			config.RefSpec(fmt.Sprintf("%v:%v", commit.String(), plumbing.NewBranchReferenceName(branch))),
-// 			config.RefSpec(fmt.Sprintf("%v:%v", commit.String(), plumbing.NewTagReferenceName(tag))),
-// 		},
-// 		Progress: writer,
-// 		Auth:     g.provider.auth,
-// 	})
-// }

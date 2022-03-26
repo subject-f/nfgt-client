@@ -58,3 +58,18 @@ func GetAssetIdBranch(transactionType TransactionType, assetId string) string {
 		panic("transaction type not recognized")
 	}
 }
+
+type byTransactionTime []VerifiedTransaction
+
+func (s byTransactionTime) Len() int {
+	return len(s)
+}
+
+func (s byTransactionTime) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+func (s byTransactionTime) Less(i, j int) bool {
+	// By descending order
+	return s[j].TransactionTime < s[i].TransactionTime
+}

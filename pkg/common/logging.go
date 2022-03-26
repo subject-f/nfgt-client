@@ -10,6 +10,12 @@ var (
 
 func init() {
 	logger.SetLevel(logrus.DebugLevel)
+
+	customFormatter := new(logrus.TextFormatter)
+
+	customFormatter.FullTimestamp = true
+
+	logger.SetFormatter(customFormatter)
 }
 
 func Infof(str string, args ...interface{}) {

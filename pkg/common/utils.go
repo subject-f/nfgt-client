@@ -49,3 +49,11 @@ func DecodeBase64(str string) (string, error) {
 		return string(decoded), nil
 	}
 }
+
+func Min(a, b int) int {
+	if a < b {
+		return a
+	} else {
+		return b
+	}
+}
