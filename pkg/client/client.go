@@ -216,11 +216,6 @@ func (c *Client) GetAssetTransactionHistory(assetId string, depth int) []Verifie
 	transactionHistory := make([]VerifiedTransaction, 0)
 
 	for i := 0; i < depth; i++ {
-		err = worktree.CheckoutParent(i)
-		if common.CheckError(err) {
-			break
-		}
-
 		t, err := getVerifiedTransaction(worktree)
 
 		if common.CheckError(err) {
@@ -228,6 +223,13 @@ func (c *Client) GetAssetTransactionHistory(assetId string, depth int) []Verifie
 		}
 
 		transactionHistory = append(transactionHistory, *t)
+
+		err = worktree.CheckoutParent(1)
+
+		if common.CheckError(err) {
+			// Reached EOF
+			break
+		}
 	}
 
 	return transactionHistory
