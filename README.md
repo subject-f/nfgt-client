@@ -14,6 +14,18 @@ This document serves to provide an overview of NFGTs.
 4. Run the source `go run main.go`
 5. Transact!
 
+## Beacon Repo Setup
+
+The beacon chain should be set up as a repository with a default branch (eg. `main`, `master`, etc) that will serve as the epoch branch for new interaction chains. The epoch branch name should then be configured under `config.git.epoch_branch` in yuor `config.yaml`.
+
+Deploy keys can be created with the following command:
+
+```bash
+ssh-keygen -t ed25519
+```
+
+Follow the interactive prompt to generate the private and public keypair, then navigate to Settings > Deploy keys in your repository to add the public key as a deploy key. Deploy keys with read-only access should be safe to share (they will power observer nodes), while deploy keys with write access should be protected.
+
 # Introduction
 
 ## Why?
