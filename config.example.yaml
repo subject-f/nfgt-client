@@ -1,0 +1,17 @@
+config:
+  git:
+    remote_url: git@github.com:user/nfgt-beacon-chain.git
+    remote_name: origin
+    epoch_branch: main
+    ssh_key: |
+      -----BEGIN OPENSSH PRIVATE KEY-----
+      s s h key here
+      it should contain multi lines
+      refrigerator
+      -----END OPENSSH PRIVATE KEY-----
+
+  api:
+    bind_address: 0.0.0.0
+    port: 8080
+
+  sync_interval: 20000

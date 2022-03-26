@@ -2,6 +2,18 @@
 
 This document serves to provide an overview of NFGTs.
 
+# Client
+
+## Getting Started
+
+### From Source
+
+1. Ensure that you have the Go toolchain installed
+2. Clone the repo
+3. Create a `config.yaml` based on `config.example.yaml`, replacing it with relevant values
+4. Run the source `go run main.go`
+5. Transact!
+
 # Introduction
 
 ## Why?
