@@ -61,7 +61,7 @@ The `successor_hash` is a hash of the passphrase required to write a successor t
 
 Finally, the `metadata` is all metadata related to the record, and is up to the caller to define. Generally, one should expect an image source and owner information such as name and display picture.
 
-Nodes will expect the last line for a given `record_id` to be the current record.
+Nodes will expect the last line for a given `asset_id` to be the current record.
 
 ## Beacon Chain
 
@@ -99,24 +99,18 @@ Immutability will be enforced by requiring linear history on GitHub, and disabli
 
 Proof-of-identity is facilitated by deploy keys offered by GitHub. As described in the high-level overview, read-write deploy keys allow nodes to act as validators, while read-only deploy keys allow nodes to be observers.
 
-## Nodes
-
-Nodes will act as frontends to the beacon chain. While the implementation is still TBD, the client will likely be written in Golang, resulting in easier distribution and deployment of nodes across different machines. A soft requirement for the node binary is the ability to perform SSH/git operations without the required system binaries; in other words, they should be bundled into the binary itself.
-
-Each node will synchronize its local state (git pull) every 10 seconds.
-
 ### HTTP API
 
 The API has the following routes:
 
-`POST /api/transaction/create` - create a transaction. Takes a `json` with an `owner_id`, `asset_id`, `passphrase`, and `metadata`
-`GET  /api/transaction/status/:transactionId` - checks the status of a transaction. This should be performed after the creation to poll the status
+- `POST /api/transaction/create` - create a transaction. Takes a `json` with an `owner_id`, `asset_id`, `passphrase`, and `metadata`
+- `GET  /api/transaction/status/:transactionId` - checks the status of a transaction. This should be performed after the creation to poll the status
 
-`GET /api/query/spot/owner/:ownerId` - the owner's current assets
-`GET /api/query/spot/asset/:assetId` - the asset's current metadata (ie. its latest transaction)
+- `GET /api/query/spot/owner/:ownerId` - the owner's current assets
+- `GET /api/query/spot/asset/:assetId` - the asset's current metadata (ie. its latest transaction)
 
-`GET /api/query/history/owner/:ownerId/:depth` - the owner's transaction history up to `:depth`
-`GET /api/query/history/asset/:assetId/:depth` - the asset's transaction history up to `:depth`
+- `GET /api/query/history/owner/:ownerId/:depth` - the owner's transaction history up to `:depth`
+- `GET /api/query/history/asset/:assetId/:depth` - the asset's transaction history up to `:depth`
 
 Response codes are standardized -- 400 means you did something wrong, 500 means the server had an issue and that you should try again.
 
@@ -134,8 +128,4 @@ There are two approaches to integrating Guya.moe.
 
 ### Reading the Chain Directly
 
-Since the chain is a JSONL file, the frontend can simply read the raw file from GitHub (which already returns CORS headers) and parse it to determine the ownership of the pages it serves. This may be scalable in the short term, but performance of Guya.moe may suffer on lower-end devices as the chain grows arbitrarily large.
-
-### Reading from an Observer Node
-
-As title. This would alleviate the frontend work in parsing the chain, but response times may suffer if we have a single node serving requests.
+The chains will have a stable URL through the format of `https://raw.githubusercontent.com/${user}/${repo}/${branch}/metadata.json`, which returns CORS headers. The reader should test for metadata on each reference to display relevant data when necessary.
