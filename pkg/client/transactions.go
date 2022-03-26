@@ -25,7 +25,7 @@ type VerifiedTransaction struct {
 }
 
 type PendingTransaction struct {
-	SuccessorPassphrase string
+	SuccessorPassphrase string `json:"successor_passphrase"`
 	VerifiedTransaction
 }
 
