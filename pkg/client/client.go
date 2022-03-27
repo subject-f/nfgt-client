@@ -81,7 +81,7 @@ func NewClient(config *common.Config, gitProvider *git.GitProvider) *Client {
 // Transacts a given transaction by verifying the rights (according to the predecessor password), then
 // pushing the contents. The caller should not expect that the transaction is verified until they've
 // manually checked it.
-func (c *Client) Transact(predecessorPassphrase string, transaction Transaction) (*PendingTransaction, error) {
+func (c *Client) Transact(predecessorPassphrase string, transaction Transaction) (t *PendingTransaction, err error) {
 	c.Lock() // Manually control this lock since we want a really short critical section
 	start := time.Now()
 
@@ -97,6 +97,13 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 		return nil, ErrConcurrentAssetId
 	} else {
 		c.AssetLockMap[transaction.AssetId] = transaction.TransactionId
+		defer func() {
+			if err != nil {
+				c.Lock()
+				delete(c.AssetLockMap, transaction.AssetId)
+				c.Unlock()
+			}
+		}()
 	}
 	c.Unlock()
 
