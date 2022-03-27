@@ -158,6 +158,10 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 		return nil, ErrTransactionCommit
 	}
 
+	// We'll need to increment the signal since we've successfully transacted, so we want
+	// the signal to block until we push and commit the transaction
+	assetSignal.Add(1)
+
 	go func() {
 		if c.GitProvider.Push(hash, transactionBranch, transaction.TransactionId) != nil {
 			common.Warnf("Failed to push transaction %v\n", transaction.TransactionId)
@@ -172,10 +176,6 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 			return
 		}
 	}()
-
-	// We'll need to increment the signal since we've successfully transacted, so we want
-	// the signal to block until we push and commit the transaction
-	assetSignal.Add(1)
 
 	return &pendingTransaction, nil
 }
@@ -311,7 +311,11 @@ func (c *Client) GetOwnerTransactionHistory(ownerId string, depth int) []Verifie
 func (c *Client) Sync() error {
 	worktree := c.GitProvider.CreateNewWorktree()
 
-	c.GitProvider.Fetch()
+	err := c.GitProvider.Fetch()
+
+	if common.CheckError(err) {
+		return ErrSyncFailed
+	}
 
 	r, err := c.GitProvider.Repo.References()
 
