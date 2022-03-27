@@ -5,6 +5,7 @@ import (
 	"nfgt-client/pkg/client"
 	"nfgt-client/pkg/common"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,6 +22,8 @@ func NewRouterController(config *common.Config, client *client.Client) *RouterCo
 	}
 
 	engine := gin.Default()
+
+	engine.Use(cors.Default())
 
 	routerController := RouterController{
 		client: client,
