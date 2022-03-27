@@ -203,6 +203,25 @@ func (c *Client) IsTransactionRejected(transactionId string) bool {
 	return ok
 }
 
+func (c *Client) GetTransaction(transactionId string) *VerifiedTransaction {
+	c.gitRepoLock.Lock()
+	defer c.gitRepoLock.Unlock()
+
+	worktree := c.GitProvider.CreateNewWorktree()
+
+	refName := plumbing.NewTagReferenceName(transactionId)
+
+	if err := worktree.CheckoutBranch(refName); common.CheckError(err) {
+		return nil
+	}
+
+	if transaction, err := getVerifiedTransaction(worktree); common.CheckError(err) {
+		return nil
+	} else {
+		return transaction
+	}
+}
+
 func (c *Client) GetAssetTransactionHistory(assetId string, depth int) []VerifiedTransaction {
 	c.gitRepoLock.Lock()
 	defer c.gitRepoLock.Unlock()
@@ -212,9 +231,7 @@ func (c *Client) GetAssetTransactionHistory(assetId string, depth int) []Verifie
 	transactionBranch := GetAssetIdBranch(NFGT, assetId)
 	refName := plumbing.NewRemoteReferenceName(c.config.RemoteName, transactionBranch)
 
-	err := worktree.CheckoutBranch(refName)
-
-	if common.CheckError(err) {
+	if err := worktree.CheckoutBranch(refName); common.CheckError(err) {
 		return nil
 	}
 
@@ -351,9 +368,7 @@ func (c *Client) Sync() error {
 		switch {
 		// Branch HEADs track the current owners of the given asset, so we update our cache accordingly
 		case strings.HasPrefix(r.Name().String(), plumbing.NewRemoteReferenceName(c.config.RemoteName, refNfgtPrefix).String()):
-			err := worktree.CheckoutBranch(r.Name())
-
-			if common.CheckError(err) {
+			if err := worktree.CheckoutBranch(r.Name()); common.CheckError(err) {
 				return nil
 			}
 
@@ -372,9 +387,7 @@ func (c *Client) Sync() error {
 			c.RLock()
 
 			if _, exists := c.TransactionSet[transactionId]; !exists {
-				err := worktree.CheckoutBranch(r.Name())
-
-				if common.CheckError(err) {
+				if err := worktree.CheckoutBranch(r.Name()); common.CheckError(err) {
 					return nil
 				}
 

@@ -40,6 +40,7 @@ func (r *RouterController) registerRoutes() {
 		{
 			transaction.POST("/create", r.createTransaction)
 			transaction.GET(fmt.Sprintf("/status/:%v", TRANSACTION_PARAM), r.checkTransaction)
+			transaction.GET(fmt.Sprintf("/detail/:%v", TRANSACTION_PARAM), r.getTransactionDetails)
 		}
 
 		query := api.Group("/query")

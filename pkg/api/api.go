@@ -84,6 +84,13 @@ func (r *RouterController) checkTransaction(c *gin.Context) {
 	})
 }
 
+func (r *RouterController) getTransactionDetails(c *gin.Context) {
+	transactionId := c.Param(TRANSACTION_PARAM)
+	c.JSON(200, gin.H{
+		"transaction": r.client.GetTransaction(transactionId),
+	})
+}
+
 func (r *RouterController) getOwnerSpot(c *gin.Context) {
 	ownerId := c.Param(OWNER_PARAM)
 

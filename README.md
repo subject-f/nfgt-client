@@ -117,6 +117,7 @@ The API has the following routes:
 
 - `POST /api/transaction/create` - create a transaction. Takes a `json` with an `owner_id`, `asset_id`, `passphrase`, and `metadata`
 - `GET  /api/transaction/status/:transactionId` - checks the status of a transaction. This should be performed after the creation to poll the status
+- `GET  /api/transaction/detail/:transactionId` - gets transaction details
 
 - `GET /api/query/spot/owner/:ownerId` - the owner's current assets
 - `GET /api/query/spot/asset/:assetId` - the asset's current metadata (ie. its latest transaction)
