@@ -72,7 +72,9 @@ func (r *RouterController) createTransaction(c *gin.Context) {
 			"error": err.Error(),
 		})
 	default:
-		c.JSON(200, pendingTransaction)
+		c.JSON(200, gin.H{
+			"transaction": pendingTransaction,
+		})
 	}
 }
 
