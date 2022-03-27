@@ -60,11 +60,13 @@ func NewClient(config *common.Config, gitProvider *git.GitProvider) *Client {
 		gitRepoLock:             new(sync.Mutex),
 	}
 
+	client.Sync(true)
+
 	go func() {
 		common.Infof("Started sync request channel\n")
 		for {
 			<-client.syncReq
-			client.Sync()
+			client.Sync(false)
 		}
 	}()
 	go func() {
@@ -342,12 +344,12 @@ func (c *Client) GetOwnerTransactionHistory(ownerId string, depth int) []Verifie
 	return transactions[:common.Min(depth, len(transactions))]
 }
 
-func (c *Client) Sync() error {
+func (c *Client) Sync(skipFetchError bool) error {
 	start := time.Now()
 
 	err := c.GitProvider.Fetch()
 
-	if common.CheckError(err) {
+	if common.CheckError(err) && !skipFetchError {
 		return ErrSyncFailed
 	}
 
