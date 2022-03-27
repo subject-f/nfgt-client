@@ -70,6 +70,8 @@ func (g *GitProvider) Fetch() error {
 
 	return remote.Fetch(&gogit.FetchOptions{
 		RemoteName: g.config.RemoteName,
+		Tags:       gogit.AllTags,
+		Auth:       g.auth,
 	})
 }
 
@@ -86,8 +88,6 @@ func (g *GitProvider) Push(hash plumbing.Hash, branch string, tag string) error 
 
 // Creates a new thread-safe worktree for the given GitProvider
 func (g *GitProvider) CreateNewWorktree() *GitWorktree {
-	common.Debugf("Creating a new worktree for remote %v\n", g.config.RemoteUrl)
-
 	storage := g.storageProvider.NewSharedStorage()
 	worktreeFs := memfs.New()
 
