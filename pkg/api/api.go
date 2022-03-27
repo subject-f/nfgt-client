@@ -53,12 +53,12 @@ func (r *RouterController) createTransaction(c *gin.Context) {
 		})
 	case errors.Is(err, client.ErrConcurrentAssetId):
 		common.Warnf("Concurrent asset ID transaction\n")
-		c.JSON(400, gin.H{
+		c.JSON(409, gin.H{
 			"error": fmt.Sprintf("The asset ID %v is pending a transaction.", transaction.AssetId),
 		})
 	case errors.Is(err, client.ErrPassphase):
 		common.Warnf("The passphrase was incorrect\n")
-		c.JSON(400, gin.H{
+		c.JSON(403, gin.H{
 			"error": "The submitted passphrase was incorrect.",
 		})
 	case errors.Is(err, client.ErrTransactionCommit):
