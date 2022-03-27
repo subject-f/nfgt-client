@@ -92,7 +92,10 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 		common.Debugf("A transaction with the current asset ID already exists\n")
 		return nil, ErrConcurrentAssetId
 	} else {
+		c.RUnlock()
+		c.Lock()
 		c.RefLockSet[transaction.AssetId] = struct{}{}
+		c.Unlock()
 
 		// This isn't pretty, but we want to defer this to guarantee we unlock the refset,
 		// however we also don't want to block the response since we want to wait on the push
@@ -105,7 +108,6 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 			}()
 		}()
 	}
-	c.RUnlock()
 
 	worktree := c.GitProvider.CreateNewWorktree()
 
