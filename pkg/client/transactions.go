@@ -2,6 +2,11 @@ package client
 
 import (
 	"fmt"
+	"nfgt-client/pkg/common"
+	"strings"
+
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/google/uuid"
 )
 
 type Asset struct {
@@ -56,6 +61,18 @@ func GetAssetIdBranch(transactionType TransactionType, assetId string) string {
 		return fmt.Sprintf("%v/%v", "nfgt", assetId)
 	default:
 		panic("transaction type not recognized")
+	}
+}
+
+func GetTransactionIdFromRef(ref plumbing.ReferenceName) string {
+	uuidCandidate := strings.ReplaceAll(ref.String(), "refs/tags/", "")
+
+	_, err := uuid.Parse(uuidCandidate)
+
+	if common.CheckError(err) {
+		return ""
+	} else {
+		return uuidCandidate
 	}
 }
 

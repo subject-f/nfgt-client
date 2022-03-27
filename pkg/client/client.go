@@ -40,7 +40,9 @@ type Client struct {
 	syncReq                 chan struct{}
 	config                  *common.Config
 	GitProvider             *git.GitProvider
-	gitRepoLock             *sync.Mutex
+
+	// Sync should be the only method that takes both locks simultaneously
+	gitRepoLock *sync.Mutex
 	sync.RWMutex
 }
 
@@ -80,21 +82,23 @@ func NewClient(config *common.Config, gitProvider *git.GitProvider) *Client {
 // pushing the contents. The caller should not expect that the transaction is verified until they've
 // manually checked it.
 func (c *Client) Transact(predecessorPassphrase string, transaction Transaction) (*PendingTransaction, error) {
-	c.Lock()
-	defer c.Unlock()
+	c.Lock() // Manually control this lock since we want a really short critical section
 	start := time.Now()
 
 	if _, exists := c.TransactionSet[transaction.TransactionId]; exists {
+		c.Unlock()
 		common.Debugf("Transaction ID %v already exists\n", transaction.TransactionId)
 		return nil, ErrTransactionIdExists
 	}
 
 	if _, exists := c.AssetLockMap[transaction.AssetId]; exists {
+		c.Unlock()
 		common.Debugf("A transaction with the current asset ID already exists\n")
 		return nil, ErrConcurrentAssetId
 	} else {
 		c.AssetLockMap[transaction.AssetId] = transaction.TransactionId
 	}
+	c.Unlock()
 
 	c.gitRepoLock.Lock()
 	defer c.gitRepoLock.Unlock()
@@ -199,15 +203,6 @@ func (c *Client) IsTransactionRejected(transactionId string) bool {
 	return ok
 }
 
-func (c *Client) GetAllAssets() []Asset {
-	c.RLock()
-	defer c.RUnlock()
-
-	// TODO
-
-	return nil
-}
-
 func (c *Client) GetAssetTransactionHistory(assetId string, depth int) []VerifiedTransaction {
 	c.gitRepoLock.Lock()
 	defer c.gitRepoLock.Unlock()
@@ -246,11 +241,6 @@ func (c *Client) GetAssetTransactionHistory(assetId string, depth int) []Verifie
 }
 
 func (c *Client) GetOwnerAssets(ownerId string) []VerifiedTransaction {
-	c.gitRepoLock.Lock()
-	defer c.gitRepoLock.Unlock()
-
-	worktree := c.GitProvider.CreateNewWorktree()
-
 	c.RLock()
 	currentOwnerSet, exists := c.OwnerSet[ownerId]
 	c.RUnlock()
@@ -258,6 +248,11 @@ func (c *Client) GetOwnerAssets(ownerId string) []VerifiedTransaction {
 	if !exists {
 		return []VerifiedTransaction{}
 	}
+
+	c.gitRepoLock.Lock()
+	defer c.gitRepoLock.Unlock()
+
+	worktree := c.GitProvider.CreateNewWorktree()
 
 	assets := make([]VerifiedTransaction, 0)
 
@@ -284,11 +279,6 @@ func (c *Client) GetOwnerAssets(ownerId string) []VerifiedTransaction {
 }
 
 func (c *Client) GetOwnerTransactionHistory(ownerId string, depth int) []VerifiedTransaction {
-	c.gitRepoLock.Lock()
-	defer c.gitRepoLock.Unlock()
-
-	worktree := c.GitProvider.CreateNewWorktree()
-
 	c.RLock()
 	currentOwnerTransactionsSet, exists := c.OwnerTransactionHistory[ownerId]
 	c.RUnlock()
@@ -296,6 +286,11 @@ func (c *Client) GetOwnerTransactionHistory(ownerId string, depth int) []Verifie
 	if !exists {
 		return []VerifiedTransaction{}
 	}
+
+	c.gitRepoLock.Lock()
+	defer c.gitRepoLock.Unlock()
+
+	worktree := c.GitProvider.CreateNewWorktree()
 
 	// We have to get all the transactions, sort it, then trim by depth
 	transactions := make([]VerifiedTransaction, 0)
@@ -333,12 +328,12 @@ func (c *Client) Sync() error {
 	}
 
 	fetchDuration := time.Since(start)
+	start = time.Now()
 
 	c.gitRepoLock.Lock()
 	defer c.gitRepoLock.Unlock()
 
 	worktree := c.GitProvider.CreateNewWorktree()
-	start = time.Now()
 
 	r, err := c.GitProvider.Repo.References()
 
@@ -353,30 +348,46 @@ func (c *Client) Sync() error {
 	tag := 0
 
 	r.ForEach(func(r *plumbing.Reference) error {
-		err := worktree.CheckoutBranch(r.Name())
-
-		if common.CheckError(err) {
-			return nil
-		}
 		switch {
 		// Branch HEADs track the current owners of the given asset, so we update our cache accordingly
 		case strings.HasPrefix(r.Name().String(), plumbing.NewRemoteReferenceName(c.config.RemoteName, refNfgtPrefix).String()):
-			branch += 1
-			t, err := getVerifiedTransaction(worktree)
+			err := worktree.CheckoutBranch(r.Name())
+
 			if common.CheckError(err) {
+				return nil
+			}
+
+			branch += 1
+
+			if t, err := getVerifiedTransaction(worktree); common.CheckError(err) {
 				failure += 1
 			} else {
 				c.processBranch(r.Name(), t)
 			}
+
 		// Tags are general transactions that we should process
 		case strings.HasPrefix(r.Name().String(), plumbing.NewTagReferenceName(refTagPrefix).String()):
-			tag += 1
-			t, err := getVerifiedTransaction(worktree)
-			if common.CheckError(err) {
-				failure += 1
-			} else {
-				c.processTag(r.Name(), t)
+			transactionId := GetTransactionIdFromRef(r.Name())
+
+			c.RLock()
+
+			if _, exists := c.TransactionSet[transactionId]; !exists {
+				err := worktree.CheckoutBranch(r.Name())
+
+				if common.CheckError(err) {
+					return nil
+				}
+
+				tag += 1
+
+				if t, err := getVerifiedTransaction(worktree); common.CheckError(err) {
+					failure += 1
+				} else {
+					defer c.processTag(r.Name(), t)
+				}
 			}
+
+			defer c.RUnlock()
 		}
 
 		success += 1
