@@ -40,6 +40,7 @@ type Client struct {
 	syncReq                 chan struct{}
 	config                  *common.Config
 	GitProvider             *git.GitProvider
+	gitRepoLock             *sync.Mutex
 	sync.RWMutex
 }
 
@@ -54,6 +55,7 @@ func NewClient(config *common.Config, gitProvider *git.GitProvider) *Client {
 		syncReq:                 make(chan struct{}, 1),
 		config:                  config,
 		GitProvider:             gitProvider,
+		gitRepoLock:             new(sync.Mutex),
 	}
 
 	go func() {
@@ -78,9 +80,6 @@ func NewClient(config *common.Config, gitProvider *git.GitProvider) *Client {
 // pushing the contents. The caller should not expect that the transaction is verified until they've
 // manually checked it.
 func (c *Client) Transact(predecessorPassphrase string, transaction Transaction) (*PendingTransaction, error) {
-	// We'll hold a write lock since it seems like go-git isn't particularly thread-safe, despite
-	// having shared storage. We only write when we commit, which we will hold the lock for so
-	// the duration of contention shouldn't actually be that long
 	c.Lock()
 	defer c.Unlock()
 	start := time.Now()
@@ -90,14 +89,15 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 		return nil, ErrTransactionIdExists
 	}
 
-	var assetSignal sync.WaitGroup
-
 	if _, exists := c.AssetLockMap[transaction.AssetId]; exists {
 		common.Debugf("A transaction with the current asset ID already exists\n")
 		return nil, ErrConcurrentAssetId
 	} else {
 		c.AssetLockMap[transaction.AssetId] = transaction.TransactionId
 	}
+
+	c.gitRepoLock.Lock()
+	defer c.gitRepoLock.Unlock()
 
 	worktree := c.GitProvider.CreateNewWorktree()
 
@@ -150,10 +150,6 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 		return nil, ErrTransactionCommit
 	}
 
-	// We'll need to increment the signal since we've successfully transacted, so we want
-	// the signal to block until we push and commit the transaction
-	assetSignal.Add(1)
-
 	go func() {
 		err := c.GitProvider.Push(hash, transactionBranch, transaction.TransactionId)
 		if common.CheckError(err) {
@@ -177,6 +173,10 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 			return
 		}
 	}()
+
+	common.Debugf("Pending transaction (%v) for asset (%v) took %v\n",
+		transaction.TransactionId, transaction.AssetId, time.Since(start),
+	)
 
 	return &pendingTransaction, nil
 }
@@ -209,8 +209,8 @@ func (c *Client) GetAllAssets() []Asset {
 }
 
 func (c *Client) GetAssetTransactionHistory(assetId string, depth int) []VerifiedTransaction {
-	c.RLock()
-	defer c.RUnlock()
+	c.gitRepoLock.Lock()
+	defer c.gitRepoLock.Unlock()
 
 	worktree := c.GitProvider.CreateNewWorktree()
 
@@ -246,12 +246,14 @@ func (c *Client) GetAssetTransactionHistory(assetId string, depth int) []Verifie
 }
 
 func (c *Client) GetOwnerAssets(ownerId string) []VerifiedTransaction {
-	c.RLock()
-	defer c.RUnlock()
+	c.gitRepoLock.Lock()
+	defer c.gitRepoLock.Unlock()
 
 	worktree := c.GitProvider.CreateNewWorktree()
 
+	c.RLock()
 	currentOwnerSet, exists := c.OwnerSet[ownerId]
+	c.RUnlock()
 
 	if !exists {
 		return []VerifiedTransaction{}
@@ -277,16 +279,19 @@ func (c *Client) GetOwnerAssets(ownerId string) []VerifiedTransaction {
 
 		assets = append(assets, *t)
 	}
+
 	return assets
 }
 
 func (c *Client) GetOwnerTransactionHistory(ownerId string, depth int) []VerifiedTransaction {
-	c.RLock()
-	defer c.RUnlock()
+	c.gitRepoLock.Lock()
+	defer c.gitRepoLock.Unlock()
 
 	worktree := c.GitProvider.CreateNewWorktree()
 
+	c.RLock()
 	currentOwnerTransactionsSet, exists := c.OwnerTransactionHistory[ownerId]
+	c.RUnlock()
 
 	if !exists {
 		return []VerifiedTransaction{}
@@ -321,13 +326,19 @@ func (c *Client) GetOwnerTransactionHistory(ownerId string, depth int) []Verifie
 func (c *Client) Sync() error {
 	start := time.Now()
 
-	worktree := c.GitProvider.CreateNewWorktree()
-
 	err := c.GitProvider.Fetch()
 
 	if common.CheckError(err) {
 		return ErrSyncFailed
 	}
+
+	fetchDuration := time.Since(start)
+
+	c.gitRepoLock.Lock()
+	defer c.gitRepoLock.Unlock()
+
+	worktree := c.GitProvider.CreateNewWorktree()
+	start = time.Now()
 
 	r, err := c.GitProvider.Repo.References()
 
@@ -372,8 +383,8 @@ func (c *Client) Sync() error {
 		return nil
 	})
 
-	common.Infof("Sync status (success: %v, failure: %v), parsed %v branches and %v tags, took %v\n",
-		success, failure, branch, tag, time.Since(start),
+	common.Infof("Sync status (success: %v, failure: %v), parsed %v branches and %v tags, took (%v fetch, %v resolution)\n",
+		success, failure, branch, tag, fetchDuration, time.Since(start),
 	)
 
 	return nil
