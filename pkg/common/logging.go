@@ -1,11 +1,18 @@
 package common
 
 import (
+	"runtime"
+	"time"
+
 	"github.com/sirupsen/logrus"
 )
 
 var (
 	logger = logrus.New()
+)
+
+const (
+	memoryLogInterval = 10
 )
 
 func init() {
@@ -16,6 +23,21 @@ func init() {
 	customFormatter.FullTimestamp = true
 
 	logger.SetFormatter(customFormatter)
+
+	go func() {
+		for {
+			logMemoryUsage()
+			time.Sleep(memoryLogInterval * time.Second)
+		}
+	}()
+}
+
+func logMemoryUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	Debugf("Alloc = %v MiB, TotalAlloc = %v MiB, Sys = %v MiB, NumGC = %v\n",
+		bToMb(m.Alloc), bToMb(m.TotalAlloc), bToMb(m.Sys), m.NumGC)
 }
 
 func Infof(str string, args ...interface{}) {
