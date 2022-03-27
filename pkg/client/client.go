@@ -31,8 +31,9 @@ const (
 // The cilent should parse errors, do the checking before commiting a transaction,
 // and acting like a source of truth for the state of the repo
 type Client struct {
-	RefLockSet              map[string]struct{}            // A set of all pending references
+	AssetLockMap            map[string]string              // A set of all pending assets to transactions
 	TransactionSet          map[string]struct{}            // A set of the verified transaction IDs
+	TransactionRejectSet    map[string]struct{}            // A set of rejected transaction IDs
 	AssetIdMap              map[string]string              // Mapping of asset ID to owner ID
 	OwnerSet                map[string]map[string]struct{} // A set of the asset IDs an owner currently has
 	OwnerTransactionHistory map[string]map[string]struct{} // A map to a set of all transactions related to a given owner
@@ -44,8 +45,9 @@ type Client struct {
 
 func NewClient(config *common.Config, gitProvider *git.GitProvider) *Client {
 	client := Client{
-		RefLockSet:              make(map[string]struct{}),
+		AssetLockMap:            make(map[string]string),
 		TransactionSet:          make(map[string]struct{}),
+		TransactionRejectSet:    make(map[string]struct{}),
 		AssetIdMap:              make(map[string]string),
 		OwnerSet:                make(map[string]map[string]struct{}),
 		OwnerTransactionHistory: make(map[string]map[string]struct{}),
@@ -76,37 +78,25 @@ func NewClient(config *common.Config, gitProvider *git.GitProvider) *Client {
 // pushing the contents. The caller should not expect that the transaction is verified until they've
 // manually checked it.
 func (c *Client) Transact(predecessorPassphrase string, transaction Transaction) (*PendingTransaction, error) {
-	c.RLock() // Unlock isn't deferred since we want to unlock ASAP
+	// We'll hold a write lock since it seems like go-git isn't particularly thread-safe, despite
+	// having shared storage. We only write when we commit, which we will hold the lock for so
+	// the duration of contention shouldn't actually be that long
+	c.Lock()
+	defer c.Unlock()
 	start := time.Now()
 
 	if _, exists := c.TransactionSet[transaction.TransactionId]; exists {
-		c.RUnlock()
 		common.Debugf("Transaction ID %v already exists\n", transaction.TransactionId)
 		return nil, ErrTransactionIdExists
 	}
 
 	var assetSignal sync.WaitGroup
 
-	if _, exists := c.RefLockSet[transaction.AssetId]; exists {
-		c.RUnlock()
+	if _, exists := c.AssetLockMap[transaction.AssetId]; exists {
 		common.Debugf("A transaction with the current asset ID already exists\n")
 		return nil, ErrConcurrentAssetId
 	} else {
-		c.RUnlock()
-		c.Lock()
-		c.RefLockSet[transaction.AssetId] = struct{}{}
-		c.Unlock()
-
-		// This isn't pretty, but we want to defer this to guarantee we unlock the refset,
-		// however we also don't want to block the response since we want to wait on the push
-		defer func() {
-			go func() {
-				assetSignal.Wait()
-				c.Lock()
-				delete(c.RefLockSet, transaction.AssetId)
-				c.Unlock()
-			}()
-		}()
+		c.AssetLockMap[transaction.AssetId] = transaction.TransactionId
 	}
 
 	worktree := c.GitProvider.CreateNewWorktree()
@@ -165,11 +155,20 @@ func (c *Client) Transact(predecessorPassphrase string, transaction Transaction)
 	assetSignal.Add(1)
 
 	go func() {
-		if c.GitProvider.Push(hash, transactionBranch, transaction.TransactionId) != nil {
+		err := c.GitProvider.Push(hash, transactionBranch, transaction.TransactionId)
+		if common.CheckError(err) {
 			common.Warnf("Failed to push transaction %v\n", transaction.TransactionId)
+			c.Lock()
+			// The deletion here should be mutually exclusive with the sync
+			// since it either exists in the remote, or it doesn't
+			// Thus, we can safely delete the reference lock
+			delete(c.AssetLockMap, transaction.AssetId)
+			c.TransactionRejectSet[transaction.TransactionId] = struct{}{}
+			c.Unlock()
 		}
-		common.Debugf("Transaction (%v) took %v\n", transaction.TransactionId, time.Since(start))
-		assetSignal.Done()
+		common.Debugf("Transaction (%v) for asset (%v) took %v\n",
+			transaction.TransactionId, transaction.AssetId, time.Since(start),
+		)
 
 		select {
 		case c.syncReq <- struct{}{}:
@@ -187,6 +186,15 @@ func (c *Client) IsTransactionCommitted(transactionId string) bool {
 	defer c.RUnlock()
 
 	_, ok := c.TransactionSet[transactionId]
+
+	return ok
+}
+
+func (c *Client) IsTransactionRejected(transactionId string) bool {
+	c.RLock()
+	defer c.RUnlock()
+
+	_, ok := c.TransactionRejectSet[transactionId]
 
 	return ok
 }
@@ -311,6 +319,8 @@ func (c *Client) GetOwnerTransactionHistory(ownerId string, depth int) []Verifie
 }
 
 func (c *Client) Sync() error {
+	start := time.Now()
+
 	worktree := c.GitProvider.CreateNewWorktree()
 
 	err := c.GitProvider.Fetch()
@@ -362,7 +372,10 @@ func (c *Client) Sync() error {
 		return nil
 	})
 
-	common.Infof("Sync status (success: %v, failure: %v), parsed %v branches and %v tags\n", success, failure, branch, tag)
+	common.Infof("Sync status (success: %v, failure: %v), parsed %v branches and %v tags, took %v\n",
+		success, failure, branch, tag, time.Since(start),
+	)
+
 	return nil
 }
 
@@ -426,6 +439,18 @@ func (c *Client) processTag(refName plumbing.ReferenceName, vTransaction *Verifi
 	}
 
 	ownerSet[vTransaction.TransactionId] = struct{}{}
+
+	// We won't unlock an asset until we know it has been committed; we can parse the
+	// tags since we just need to match up the transaction ID and asset ID; if it doesn't
+	// exist, we shouldn't unlock it (unless of course the transaction was rejected, which
+	// the transact goroutine should handle)
+	if transactionId, exists := c.AssetLockMap[vTransaction.AssetId]; exists &&
+		transactionId == vTransaction.TransactionId {
+		common.Debugf("Clearing asset ID %v with transaction %v\n",
+			vTransaction.AssetId, vTransaction.TransactionId,
+		)
+		delete(c.AssetLockMap, vTransaction.AssetId)
+	}
 
 	return nil
 }

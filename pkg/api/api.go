@@ -80,6 +80,7 @@ func (r *RouterController) checkTransaction(c *gin.Context) {
 	transactionId := c.Param(TRANSACTION_PARAM)
 	c.JSON(200, gin.H{
 		"committed": r.client.IsTransactionCommitted(transactionId),
+		"rejected":  r.client.IsTransactionRejected(transactionId),
 	})
 }
 
