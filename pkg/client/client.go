@@ -301,6 +301,8 @@ func (c *Client) GetOwnerAssets(ownerId string) []VerifiedTransaction {
 		assets = append(assets, *t)
 	}
 
+	sort.Sort(byTransactionTime(assets))
+
 	return assets
 }
 
