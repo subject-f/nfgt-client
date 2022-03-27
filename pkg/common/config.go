@@ -20,6 +20,8 @@ type Config struct {
 	ApiPort        string `yaml:"config.api.port"`
 
 	SyncInterval int64 `yaml:"config.sync_interval"`
+
+	Debug bool `yaml:"config.debug"`
 }
 
 var defaultValues = map[string]interface{}{
@@ -29,6 +31,7 @@ var defaultValues = map[string]interface{}{
 	"config.sync_interval":    4000,
 	"config.api.port":         "8080",
 	"config.api.bind_address": "0.0.0.0",
+	"config.debug":            false,
 }
 
 func ParseConfig(filepath string) Config {

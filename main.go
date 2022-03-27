@@ -13,5 +13,10 @@ func main() {
 	cli := client.NewClient(&config, git)
 	api := api.NewRouterController(&config, cli)
 
+	if config.Debug {
+		common.EnableDebugLogging()
+		common.LogMemoryUsage(10)
+	}
+
 	api.Run()
 }

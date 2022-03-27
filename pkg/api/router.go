@@ -15,7 +15,13 @@ type RouterController struct {
 }
 
 func NewRouterController(config *common.Config, client *client.Client) *RouterController {
+	common.Infof("Starting router controller\n")
+	if !config.Debug {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	engine := gin.Default()
+
 	routerController := RouterController{
 		client: client,
 		engine: engine,
@@ -56,5 +62,8 @@ func (r *RouterController) registerRoutes() {
 }
 
 func (r *RouterController) Run() {
-	r.engine.Run(fmt.Sprintf("%v:%v", r.config.ApiBindAddress, r.config.ApiPort))
+	addr := fmt.Sprintf("%v:%v", r.config.ApiBindAddress, r.config.ApiPort)
+
+	common.Infof("HTTP API available at: %v\n", addr)
+	r.engine.Run(addr)
 }

@@ -15,3 +15,4 @@ config:
     port: 8080
 
   sync_interval: 20000
+  debug: false
