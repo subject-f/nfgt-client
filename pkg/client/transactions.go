@@ -42,14 +42,14 @@ const (
 
 const (
 	refPrefix     = "refs/"
-	refNfgtPrefix = "nfgt/"
+	refNfgtPrefix = "nfgt-"
 	refTagPrefix  = ""
 )
 
 func GetTransactionBranch(transactionType TransactionType, transaction Transaction) string {
 	switch transactionType {
 	case NFGT:
-		return fmt.Sprintf("%v/%v", "nfgt", transaction.AssetId)
+		return fmt.Sprintf("%v-%v", "nfgt", transaction.AssetId)
 	default:
 		panic("transaction type not recognized")
 	}
@@ -58,7 +58,7 @@ func GetTransactionBranch(transactionType TransactionType, transaction Transacti
 func GetAssetIdBranch(transactionType TransactionType, assetId string) string {
 	switch transactionType {
 	case NFGT:
-		return fmt.Sprintf("%v/%v", "nfgt", assetId)
+		return fmt.Sprintf("%v-%v", "nfgt", assetId)
 	default:
 		panic("transaction type not recognized")
 	}

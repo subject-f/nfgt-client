@@ -97,7 +97,7 @@ Clients should also be careful about creating local refs that reference those re
 
 Each interaction chain reference should contain an object named `metadata.json` that fully describes that specific interaction's data.
 
-Otherwise, interaction chains should be namespaced with the type then resource separated by a slash. For example, an `nfgt` with a resource ID of `abcd` should be on a branch named `nfgt/abcd`.
+Otherwise, interaction chains should be namespaced with the type then resource separated by a dash. For example, an `nfgt` with a resource ID of `abcd` should be on a branch named `nfgt-abcd`.
 
 ### Committing a Transaction
 
