@@ -13,6 +13,7 @@ import (
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
+	ssh2 "golang.org/x/crypto/ssh"
 )
 
 var (
@@ -40,6 +41,7 @@ func NewGitProvider(config *common.Config) *GitProvider {
 	common.Debugf("Initializing repository (%v) as backing chain.\n", config.RemoteUrl)
 
 	auth, err := ssh.NewPublicKeys("git", []byte(config.SshKey), config.SshPassphrase)
+	auth.HostKeyCallback = ssh2.InsecureIgnoreHostKey()
 
 	common.CheckError(err)
 
