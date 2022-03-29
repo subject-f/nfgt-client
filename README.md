@@ -16,7 +16,7 @@ This document serves to provide an overview of NFGTs.
 
 ## Beacon Repo Setup
 
-The beacon chain should be set up as a repository with a default branch (eg. `main`, `master`, etc) that will serve as the epoch branch for new interaction chains. The epoch branch name should then be configured under `config.git.epoch_branch` in yuor `config.yaml`.
+The beacon chain should be set up as a repository with a default branch (eg. `main`, `master`, etc) that will serve as the epoch branch for new interaction chains. The epoch branch name should then be configured under `config.git.epoch_branch` in your `config.yaml`.
 
 Deploy keys can be created with the following command:
 
