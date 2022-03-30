@@ -85,6 +85,11 @@ func (g *GitProvider) Push(hash plumbing.Hash, branch string, tag string) error 
 			config.RefSpec(fmt.Sprintf("%v:%v", hash.String(), plumbing.NewTagReferenceName(tag))),
 		},
 		Auth: g.auth,
+		// Upon further investigation, go-git doesn't adhere to the git spec
+		// _exactly_ since it checks all references before actually pushing,
+		// preventing non-fast-foward updates. However, we'll make it more
+		// explicit and correct by setting the flag to push atomically
+		Atomic: true,
 	})
 }
 
