@@ -46,7 +46,7 @@ In addition, nodes will provide an HTTP API that can be used to read from and tr
 
 ## JSON Record
 
-Each commit of the chain is a JSON record that has, at a minimum, the following schema:
+Each commit to the chain is a JSON record that has, at a minimum, the following schema:
 
 ```json
 {
@@ -73,15 +73,14 @@ The `successor_hash` is a hash of the passphrase required to write a successor t
 
 Finally, the `metadata` is all metadata related to the record, and is up to the caller to define. Generally, one should expect an image source and owner information such as name and display picture.
 
-Nodes will expect the last line for a given `asset_id` to be the current record.
-
+The latest commit on a given interaction chain (ie. branch) will be considered the latest transaction, thus that `owner_id` is the owner of the asset.
 ## Beacon Chain
 
 The beacon chain is the synchronization mechanism between nodes; it is the centralized broker that coordinates distributed state. This differs from traditional cryptocurrencies that use a gossip protocol to communicate.
 
 The chain itself is a git repo hosted on GitHub that creates a new branch for each interaction chain.
 
-An interaction chain is a node-specific commit chain that refers to a specific resource.
+An interaction chain is a branch that refers to a specific resource.
 
 ### Interaction Chains
 
@@ -102,6 +101,14 @@ Otherwise, interaction chains should be namespaced with the type then resource s
 ### Committing a Transaction
 
 A transaction is considered committed if the commit is tagged with the transaction ID. This means that a transaction can be written but not considered committed if the commit is in the git repo, but the commit hasn't been tagged yet or pushed to the repository. A transaction isn't considered finalized until a client synchronizes against the upstream.
+
+#### Why don't we just use the commit?
+
+A commit doesn't have any additional reference to it, so if the local repository creates a commit but is rejected (somebody else transacted on that branch, for example), then the local repository cannot know if the transaction was truly committed without some other action (such as delete that commit object locally).
+
+Thus, consistency is maintained through tag references. Each time a transaction is pushed on a branch, the refspec pushes that commit to the remote reference of that branch, as well as to a tag of its transaction ID. Since we're pushing atomically, if somebody else transacted on that branch between the last sync then we should expect the entire push to be rejected (so the tag is also rejected).
+
+During the next sync, the tag won't be retrieved from the remote and the client will not be able to confirm the transaction and update its cached state.
 
 ### Immutability
 
@@ -137,8 +144,28 @@ Transactions between AiBot and users (such as for Guyacha) can be facilitated by
 
 ## Integration with Guya.moe
 
-There are two approaches to integrating Guya.moe.
+The chains will have a stable URL through the format of `https://raw.githubusercontent.com/${user}/${repo}/${reference}/${file}`, which also returns proper CORS headers. Thus, the reader can simply generate the URL to check for a given image's metadata, returning and rendering its ownership (if any).
 
-### Reading the Chain Directly
+### Stale Data
 
-The chains will have a stable URL through the format of `https://raw.githubusercontent.com/${user}/${repo}/${branch}/metadata.json`, which returns CORS headers. The reader should test for metadata on each reference to display relevant data when necessary.
+By default, the GitHub CDN caches raw contents and ignores query parameters (ie. so we can't add `?cache_buster=123` to the URL) for a relatively long duration. This means that users won't be able to see their ownership reflected on Guya.moe until the cache is reset.
+
+However, GitHub respects revision selections (nb. to an extent; it depends on your reference name) in their URL resolution. This means that we can use ancestry selectors like `~` and `^` to navigate from a particular reference, both of which can be chained together. For example, if you have a branch named `some-branch` and you want the commit _before_ its `HEAD` then you can use `some-branch~1` as `${reference}` in the URL above. In addition, `some-branch` and `some-branch~0` point to the same reference.
+
+Since we have 2 ancestry selectors to work with, we can encode our cache buster (which normally would be some random number) as its binary string instead. Putting this altogether, this means that we can map `0` to `^0` and `1` to `~0` in that binary string and append that to the end of the reference in the URL.
+
+For example:
+
+```javascript
+...
+const cacheBuster = Math.random()
+	.toString(2)
+	.split(".")[1]
+	.split("")
+	.map(e => {"0": "^0", "1": "~0"})
+	.join("");
+
+const freshGithubUrl = `https://raw.githubusercontent.com/${user}/${repo}/${reference}${cacheBuster}/${file}`
+```
+
+The cardinality of such strings is large enough that the majority of clients will be able to bust the cache.
