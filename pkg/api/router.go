@@ -61,6 +61,14 @@ func (r *RouterController) registerRoutes() {
 			}
 		}
 
+		introspection := api.Group("/introspection")
+		{
+			// Introspection routes that should not be be enabled on a validator node (due to the amount of data and locking)
+			introspection.GET("/transactions", r.getAllCachedTransactions)
+			introspection.GET("/owners", r.getAllCachedOwners)
+			introspection.GET("/assets", r.getAllCachedAssets)
+		}
+
 		api.GET("/health", r.healthCheck)
 	}
 }

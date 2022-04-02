@@ -153,6 +153,50 @@ func (r *RouterController) getAssetHistory(c *gin.Context) {
 	})
 }
 
+func (r *RouterController) getAllCachedTransactions(c *gin.Context) {
+	r.client.RLock()
+
+	transactions := make([]string, 0)
+
+	for transactionId := range r.client.TransactionSet {
+		transactions = append(transactions, transactionId)
+	}
+
+	r.client.RUnlock()
+
+	c.JSON(200, gin.H{
+		"transactions": transactions,
+	})
+}
+
+func (r *RouterController) getAllCachedOwners(c *gin.Context) {
+	r.client.RLock()
+
+	ownerMappings := make(map[string][]string)
+
+	for owner, assetSet := range r.client.OwnerSet {
+		ownerMappings[owner] = make([]string, 0)
+		for assetId := range assetSet {
+			ownerMappings[owner] = append(ownerMappings[owner], assetId)
+		}
+	}
+
+	r.client.RUnlock()
+
+	c.JSON(200, gin.H{
+		"owners": ownerMappings,
+	})
+}
+
+func (r *RouterController) getAllCachedAssets(c *gin.Context) {
+	r.client.RLock()
+	defer r.client.RUnlock()
+
+	c.JSON(200, gin.H{
+		"assets": r.client.AssetIdMap,
+	})
+}
+
 func parseDepth(depth string) (int64, error) {
 	return strconv.ParseInt(depth, 10, 64)
 }

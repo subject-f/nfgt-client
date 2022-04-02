@@ -134,6 +134,13 @@ The API has the following routes:
 
 Response codes are standardized -- 400 means you did something wrong, 500 means the server had an issue and that you should try again.
 
+#### Introspection
+
+These endpoints shouldn't be used on a validator node, and should really only be used every once in a while (especially since there's no pagination).
+
+- `GET /api/introspection/transactions` - returns a list of verified transactions
+- `GET /api/introspection/owners` - returns a mapping from all owner IDs to a list of their asset IDs
+- `GET /api/introspection/assets` - returns a mapping from an asset ID to its owner ID
 # Integrations
 
 ## Integration with AiBot

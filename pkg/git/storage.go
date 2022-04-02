@@ -246,6 +246,11 @@ type SynchronizedReferenceStorage struct {
 }
 
 func (r *SynchronizedReferenceStorage) SetReference(ref *plumbing.Reference) error {
+	// TODO the reason we need to put a fat mutex on the worktree operations is because
+	// when we checkout, we modify the shared reference storage, affecting the HEAD reference
+	// This means that without some sort of copy-on-write map for the read-only worktrees,
+	// we cannot faithfully support concurrent operations. This can be a venture for the
+	// future if that itch ever arises, but since the event is over, I'm not going to bother.
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	if ref != nil {
